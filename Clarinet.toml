@@ -1,0 +1,28 @@
+[project]
+name = 'stackstix'
+description = ''
+authors = []
+telemetry = true
+cache_dir = '.\.cache'
+requirements = []
+[contracts.event-storage]
+path = 'contracts/event-storage.clar'
+clarity_version = 3
+epoch = 'latest'
+
+[contracts.stacktix-logic]
+path = 'contracts/stacktix-logic.clar'
+clarity_version = 3
+epoch = 'latest'
+[repl.analysis]
+passes = []
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
+
+[repl.remote_data]
+enabled = false
+api_url = 'https://api.hiro.so'
