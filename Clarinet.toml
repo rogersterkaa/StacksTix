@@ -5,6 +5,11 @@ authors = []
 telemetry = true
 cache_dir = '.\.cache'
 requirements = []
+[contracts.SIP-09]
+path = 'contracts/SIP-09.clar'
+clarity_version = 3
+epoch = 'latest'
+
 [contracts.event-storage]
 path = 'contracts/event-storage.clar'
 clarity_version = 3
