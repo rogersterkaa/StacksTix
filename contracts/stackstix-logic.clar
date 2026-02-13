@@ -41,7 +41,8 @@
 (define-constant ERR-REFUND-NOT-ALLOWED (err u212))    ;; Event doesn't allow refunds
 (define-constant ERR-WITHDRAW-NOT-ALLOWED (err u213))  ;; Nothing to withdraw
 (define-constant ERR-INVALID-RECIPIENT (err u214))     ;; Invalid recipient address
-
+(define-constant ERR-TRANSFER-LOCKED (err u215))
+(define-constant ERR-PRICE-TOO-HIGH (err u216))
 ;; Platform fee percentage (2% of ticket price)
 ;; Calculated as: (price * 2) / 100
 (define-constant PLATFORM-FEE-PERCENT u2)
@@ -58,6 +59,18 @@
 ;; This should be updated via set-platform-wallet after deployment
 (define-data-var platform-wallet principal tx-sender)
 
+;; Contract owner - the deployer who can set restrictions
+(define-data-var contract-owner principal tx-sender)
+
+;; Transfer restrictions - anti-scalping
+(define-map transfer-restrictions
+    { ticket-id: uint }
+    {
+        transferable: bool,
+        max-resale-price: (optional uint),
+        locked-until-block: (optional uint)
+    }
+)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SIP-009 INTERFACE IMPLEMENTATION
@@ -702,4 +715,57 @@
     })
     none
   )
+)
+
+;; ============================================================
+;; TRANSFER RESTRICTIONS - Anti-Scalping
+;; ============================================================
+
+(define-public (set-transfer-restriction
+    (ticket-id uint)
+    (transferable bool)
+    (max-resale-price (optional uint))
+    (locked-until-block (optional uint)))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set transfer-restrictions
+            { ticket-id: ticket-id }
+            {
+                transferable: transferable,
+                max-resale-price: max-resale-price,
+                locked-until-block: locked-until-block
+            }))
+    )
+)
+
+(define-public (transfer-with-price-check
+    (ticket-id uint)
+    (sender principal)
+    (recipient principal)
+    (sale-price uint))
+    (let
+        (
+            (restriction (default-to
+                { transferable: true, max-resale-price: none, locked-until-block: none }
+                (map-get? transfer-restrictions { ticket-id: ticket-id })))
+        )
+        (asserts! (is-eq tx-sender sender) ERR-NOT-AUTHORIZED)
+        (asserts! (get transferable restriction) ERR-TRANSFER-LOCKED)
+        
+        (match (get locked-until-block restriction)
+            unlock-block (asserts! (>= stacks-block-height unlock-block) ERR-TRANSFER-LOCKED)
+            true
+        )
+        
+        (match (get max-resale-price restriction)
+            max-price (asserts! (<= sale-price max-price) ERR-PRICE-TOO-HIGH)
+            true
+        )
+        
+        (contract-call? .stackstix-storage transfer-ticket ticket-id sender recipient)
+    )
+)
+
+(define-read-only (get-transfer-restriction (ticket-id uint))
+    (map-get? transfer-restrictions { ticket-id: ticket-id })
 )
