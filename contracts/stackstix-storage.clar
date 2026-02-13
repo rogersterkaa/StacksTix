@@ -846,3 +846,38 @@
     owner: (var-get contract-owner)
   })
 )
+;; Transfer ticket ownership
+;; Updates the owner field in the tickets map
+;; @param ticket-id: The ticket to transfer
+;; @param new-owner: The new owner principal
+;; @returns: (response bool uint) - Success or error
+(define-public (transfer-ticket (ticket-id uint) (sender principal) (recipient principal))
+  (begin
+    (try! (check-authorized-and-active))
+    (let ((ticket (unwrap! (map-get? tickets { ticket-id: ticket-id }) ERR-TICKET-NOT-FOUND)))
+      ;; Verify sender is current owner
+      (asserts! (is-eq (get owner ticket) sender) ERR-NOT-AUTHORIZED)
+      
+      ;; Update ticket owner
+      (map-set tickets
+        { ticket-id: ticket-id }
+        (merge ticket { owner: recipient })
+      )
+      
+      ;; Update indexes
+      (map-delete owner-tickets { owner: sender, ticket-id: ticket-id })
+      (map-set owner-tickets
+        { owner: recipient, ticket-id: ticket-id }
+        { event-id: (get event-id ticket) }
+      )
+      
+      (map-set event-tickets
+        { event-id: (get event-id ticket), ticket-id: ticket-id }
+        { owner: recipient }
+      )
+      
+      (ok (print { event: "ticket-transferred", ticket-id: ticket-id, from: sender, to: recipient }))
+    )
+  )
+)
+
