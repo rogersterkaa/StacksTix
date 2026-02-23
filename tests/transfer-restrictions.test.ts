@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+﻿import { describe, expect, it, beforeEach } from "vitest";
 import { Cl } from "@stacks/transactions";
 
 const accounts = simnet.getAccounts();
@@ -12,7 +12,7 @@ describe("Transfer Restrictions - Anti-Scalping", () => {
     simnet.callPublicFn(
       "stackstix-storage",
       "set-contract-owner",
-      [Cl.principal(\\.stackstix-logic\)],
+      [Cl.principal(deployer + ".stackstix-logic")],
       deployer
     );
   });
