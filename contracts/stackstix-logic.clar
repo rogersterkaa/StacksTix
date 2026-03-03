@@ -22,7 +22,7 @@
 (impl-trait .SIP-09.nft-trait)
 
 ;;;;;;;;;;;;;;;;;;;;;
-;; CONSTANTS       ;;
+;;    CONSTANTS    ;;
 ;;;;;;;;;;;;;;;;;;;;;
 
 ;; Business logic error codes (200 series to distinguish from storage errors)
@@ -72,9 +72,9 @@
     }
 )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; SIP-009 INTERFACE IMPLEMENTATION
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; SIP-009 INTERFACE IMPLEMENTATION ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; SIP-009 Required Function: Get the last token ID minted
 ;; Returns the highest ticket ID that has been assigned
@@ -171,9 +171,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; EVENT MANAGEMENT FUNCTIONS ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Create a new event with ticket sales
 ;; Anyone can create an event and become the organizer
@@ -288,9 +288,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; TICKET PURCHASE (MINTING) ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Purchase a ticket for an event (mints NFT)
 ;; Creates a new SIP-009 NFT ticket and transfers payment
@@ -372,9 +372,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; TICKET VALIDATION       ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;
+;; TICKET VALIDATION ;;
+;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Validate a ticket at event entry
 ;; Only authorized validators can call this
@@ -424,9 +424,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; REFUND SYSTEM           ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;
+;; REFUND SYSTEM ;;
+;;;;;;;;;;;;;;;;;;;
 
 ;; Request a refund for a ticket
 ;; Only available if event allows refunds and hasn't started yet
@@ -500,9 +500,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; VALIDATOR MANAGEMENT       ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; VALIDATOR MANAGEMENT ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Add an authorized validator for an event
 ;; Only event organizer can add validators
@@ -548,9 +548,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; REVENUE WITHDRAWAL        ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;
+;; REVENUE WITHDRAWAL ;;
+;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Withdraw accumulated revenue from ticket sales
 ;; Only event organizer can withdraw
@@ -607,9 +607,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ADMIN CONFIGURATION       ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;  ADMIN CONFIGURATION   ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Set the storage contract principal
 ;; Should be called after deploying storage contract
@@ -717,10 +717,9 @@
   )
 )
 
-;; ============================================================
-;; TRANSFER RESTRICTIONS - Anti-Scalping
-;; ============================================================
-
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ;; TRANSFER RESTRICTIONS - Anti-Scalping  ;;
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-public (set-transfer-restriction
     (ticket-id uint)
     (transferable bool)
