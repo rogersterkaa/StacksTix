@@ -43,9 +43,11 @@
 (define-constant ERR-INVALID-RECIPIENT (err u214))     ;; Invalid recipient address
 (define-constant ERR-TRANSFER-LOCKED (err u215))
 (define-constant ERR-PRICE-TOO-HIGH (err u216))
+(define-constant ERR-WITHDRAWAL-LOCKED (err u217)) ;; Revenue still in post-event lock period
 ;; Platform fee percentage (2% of ticket price)
 ;; Calculated as: (price * 2) / 100
 (define-constant PLATFORM-FEE-PERCENT u2)
+(define-constant WITHDRAWAL-GRACE-PERIOD u144)
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; DATA VARIABLES  ;;
@@ -555,6 +557,7 @@
 ;; Withdraw accumulated revenue from ticket sales
 ;; Only event organizer can withdraw
 ;; Transfers locked balance to organizer
+;; NOW includes time-lock: event must be ended + grace period
 ;; @param event-id: The event to withdraw revenue from
 ;; @returns: (response bool uint) - Success or error
 (define-public (withdraw-event-revenue (event-id uint))
@@ -565,6 +568,12 @@
       ;; Verify caller is event organizer
       (asserts! (is-eq tx-sender (get organizer event)) ERR-NOT-AUTHORIZED)
       
+      ;;  Ensure event has ended + grace period passed
+      (asserts!
+         (> stacks-block-height 
+            (+ (get end-time event) WITHDRAWAL-GRACE-PERIOD))
+         ERR-WITHDRAWAL-LOCKED)
+      
       ;; Get current event balance
       (let ((event-balance (unwrap! (contract-call? .stackstix-storage get-event-balance event-id) ERR-EVENT-NOT-FOUND)))
         
@@ -574,15 +583,14 @@
           ;; Verify there is something to withdraw
           (asserts! (> withdrawable-amount u0) ERR-WITHDRAW-NOT-ALLOWED)
           
-          ;; Update event balance (move locked to zero)
+          ;; Update event balance (clear locked balance)
           (try! (contract-call? .stackstix-storage set-event-balance
             event-id
             (get available-balance event-balance)
-            u0  ;; Clear locked balance
+            u0
           ))
           
           ;; Transfer funds to organizer
-          ;; Use as-contract to transfer from contract's principal
           (try! (as-contract (stx-transfer? withdrawable-amount tx-sender (get organizer event))))
           
           ;; Update total withdrawn tracking
