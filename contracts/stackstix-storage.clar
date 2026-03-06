@@ -1,8 +1,8 @@
 ;; StacksTix Storage Contract
 
 ;; PURPOSE:
-;; This contract serves as the data storage layer for the StacksTix NFT ticketing
-;; platform. It stores all state data (events, tickets, validators, balances) and
+;; This contract serves as the data storage layer for the StacksTix NFT ticketing platform. 
+;; It stores all state data (events, tickets, validators, balances) and
 ;; can only be modified by the authorized logic contract.
 
 ;; ARCHITECTURE:
@@ -35,6 +35,12 @@
 (define-constant ERR-TICKET-ALREADY-USED (err u109)) ;; Ticket has already been validated/used
 (define-constant ERR-CONTRACT-PAUSED (err u110))   ;; Contract is paused for emergency
 (define-constant ERR-INVALID-PRICE (err u111))     ;; Ticket price must be non-negative
+
+;; Tier-specific error codes
+(define-constant ERR-TIER-EXISTS (err u112))      ;; Tier with this name already exists for this event
+(define-constant ERR-TIER-NOT-FOUND (err u113))   ;; Requested tier does not exist
+(define-constant ERR-TIER-INACTIVE (err u114))    ;; Tier is disabled/inactive
+(define-constant ERR-SOLD-OUT (err u115))         ;; No tickets remaining in this tier
 
 ;; Maximum safe unsigned integer value for overflow protection
 ;; This is the max value for uint in Clarity
@@ -98,6 +104,7 @@
   {
     event-id: uint,              ;; Which event this ticket is for
     owner: principal,            ;; Current owner of the NFT ticket
+    tier: (string-ascii 20),     ;; Ticket tier (VIP, GA, EarlyBird, etc.)
     is-used: bool,               ;; Whether ticket has been validated/used for entry
     purchase-time: uint,         ;; Block height when ticket was purchased
     used-time: (optional uint)   ;; Block height when ticket was validated (none if unused)
@@ -128,6 +135,20 @@
   }
 )
 
+;; TICKET TIERS MAP
+;; Enables multi-tier pricing for events (VIP, General Admission, Early Bird, etc.)
+;; Allows organizers to create different ticket categories with unique pricing and benefits
+;; Composite key (event-id + tier-name) allows multiple tiers per event
+(define-map ticket-tiers
+  { event-id: uint, tier-name: (string-ascii 20) }  ;; Key: Event + Tier name (e.g., "VIP", "GA")
+  {
+    price: uint,              ;; Price for this tier in microSTX
+    total-supply: uint,       ;; Maximum tickets available in this tier
+    tickets-sold: uint,       ;; Number of tickets sold from this tier
+    benefits: (string-utf8 256),  ;; Description of tier perks (e.g., "Backstage access")
+    is-active: bool           ;; Whether this tier is currently accepting purchases
+  }
+)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; INDEX MAPS - For Efficient Queries ;;
@@ -244,6 +265,17 @@
   (is-some (map-get? event-validators { event-id: event-id, validator: validator }))
 )
 
+;; IS EVENT ORGANIZER (Read-Only)
+;; Checks if a given principal is the organizer of an event
+;; @param event-id: Event to check
+;; @param user: Principal to verify
+;; @returns: bool - true if user is organizer, false otherwise
+(define-read-only (is-event-organizer (event-id uint) (user principal))
+  (match (map-get? events { event-id: event-id })
+    event (is-eq (get organizer event) user)
+    false  ;; Event doesn't exist, so user can't be organizer
+  )
+)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ADMIN FUNCTIONS - Contract Management ;;
@@ -458,56 +490,42 @@
   )
 )
 
-;; Insert a new ticket into storage (mint)
-;; Creates all necessary indexes for efficient queries
-;; @param ticket-id: Unique ticket/NFT identifier
-;; @param event-id: Which event this ticket is for
-;; @param owner: Initial owner of the ticket
+;; INSERT TICKET
+;; Legacy function - creates ticket record in storage
+;; @param ticket-id: Unique NFT ID
+;; @param event-id: Event this ticket belongs to
+;; @param owner: Ticket owner
 ;; @param purchase-time: Block height when purchased
+;; @param tier-name: Which tier (e.g., "VIP", "GA") - use "default" for non-tiered events
 ;; @returns: (response bool uint) - Success or error
-(define-public (insert-ticket 
+(define-public (insert-ticket
     (ticket-id uint)
     (event-id uint)
     (owner principal)
-    (purchase-time uint))
+    (purchase-time uint)
+    (tier-name (string-ascii 20)))
   (begin
     ;; Verify authorization
     (try! (check-authorized-and-active))
-    
     ;; Validate event exists before creating ticket
     (asserts! (event-exists event-id) ERR-EVENT-NOT-FOUND)
-    
     ;; Insert ticket data into main storage map
     (map-set tickets
       { ticket-id: ticket-id }
       {
         event-id: event-id,
         owner: owner,
+        tier: tier-name,           ;; NEW: Track which tier
         is-used: false,            ;; New tickets are unused
         purchase-time: purchase-time,
         used-time: none            ;; No use time yet
       }
     )
-    
     ;; Create owner index for "my tickets" queries
     (map-set owner-tickets
       { owner: owner, ticket-id: ticket-id }
       { event-id: event-id }
     )
-    
-    ;; Create event index for analytics/attendee lists
-    (map-set event-tickets
-      { event-id: event-id, ticket-id: ticket-id }
-      { owner: owner }
-    )
-    
-    ;; Emit mint event for indexers
-    (print { 
-      event: "ticket-minted", 
-      ticket-id: ticket-id, 
-      event-id: event-id,
-      owner: owner 
-    })
     (ok true)
   )
 )
@@ -881,3 +899,139 @@
   )
 )
 
+
+;; ;;;;;;;;;;;;;;;;;;;;;;;;
+;; TICKET TIER FUNCTIONS ;;
+;; ;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Multi-tier ticketing allows events to offer different ticket categories
+;; (VIP, General Admission, Early Bird, etc.) with unique pricing and supply limits
+
+;; CREATE TICKET TIER
+;; Creates a new pricing tier for an event
+;; Only callable by authorized contracts (logic contract)
+;; @param event-id: Which event this tier belongs to
+;; @param tier-name: Unique identifier for tier (e.g., "VIP", "GA", "EarlyBird")
+;; @param price: Cost per ticket in this tier (microSTX)
+;; @param total-supply: Maximum tickets available in this tier
+;; @param benefits: Description of tier perks (e.g., "Backstage access + Meet & Greet")
+;; @returns: (ok true) if tier created successfully
+(define-public (create-ticket-tier
+  (event-id uint)
+  (tier-name (string-ascii 20))
+  (price uint)
+  (total-supply uint)
+  (benefits (string-utf8 256)))
+  (begin
+    ;; Verify caller is authorized contract
+    (try! (check-authorized-and-active))
+    
+    ;; Validate inputs
+    (asserts! (> price u0) ERR-INVALID-PRICE)
+    (asserts! (> total-supply u0) ERR-INVALID-SUPPLY)
+    
+    ;; Ensure tier doesn't already exist
+    (asserts! (is-none (map-get? ticket-tiers { event-id: event-id, tier-name: tier-name })) 
+              ERR-TIER-EXISTS)
+    
+    ;; Create the tier
+    (ok (map-set ticket-tiers
+      { event-id: event-id, tier-name: tier-name }
+      {
+        price: price,
+        total-supply: total-supply,
+        tickets-sold: u0,
+        benefits: benefits,
+        is-active: true
+      }
+    ))
+  )
+)
+
+;; CREATE TICKET
+;; Records a new ticket purchase in storage
+;; Called by logic contract after NFT mint
+;; @param ticket-id: Unique NFT token ID
+;; @param event-id: Which event this ticket is for
+;; @param owner: Initial ticket owner (buyer)
+;; @param tier-name: Which tier this ticket belongs to (e.g., "VIP", "GA")
+;; @returns: (ok true) if ticket created successfully
+(define-public (create-ticket 
+  (ticket-id uint)
+  (event-id uint)
+  (owner principal)
+  (tier-name (string-ascii 20)))
+  (begin
+    ;; Verify caller is authorized contract
+    (try! (check-authorized-and-active))
+    
+    ;; Store ticket data
+    (ok (map-set tickets
+      { ticket-id: ticket-id }
+      {
+        event-id: event-id,
+        owner: owner,
+        tier: tier-name,
+        is-used: false,
+        purchase-time: stacks-block-height,
+        used-time: none
+      }
+    ))
+  )
+)
+;; RECORD TIER TICKET SALE
+;; Increments the sold count when a tiered ticket is purchased
+;; Only callable by authorized contracts
+;; @param event-id: Which event the tier belongs to
+;; @param tier-name: Which tier was purchased from
+;; @returns: (ok true) if sale recorded successfully
+(define-public (record-tier-ticket-sale 
+  (event-id uint) 
+  (tier-name (string-ascii 20)))
+  (let (
+    (tier (unwrap! (map-get? ticket-tiers { event-id: event-id, tier-name: tier-name }) 
+                   ERR-TIER-NOT-FOUND))
+  )
+    (begin
+      ;; Verify caller is authorized
+      (try! (check-authorized-and-active))
+      
+      ;; Verify tier is active
+      (asserts! (get is-active tier) ERR-TIER-INACTIVE)
+      
+      ;; Verify tier has remaining supply
+      (asserts! (< (get tickets-sold tier) (get total-supply tier)) ERR-SOLD-OUT)
+      
+      ;; Increment sold count
+      (ok (map-set ticket-tiers
+        { event-id: event-id, tier-name: tier-name }
+        (merge tier { tickets-sold: (+ (get tickets-sold tier) u1) })
+      ))
+    )
+  )
+)
+
+;; GET TIER DETAILS (Read-Only)
+;; Retrieves complete information about a specific tier
+;; @param event-id: Event identifier
+;; @param tier-name: Tier identifier
+;; @returns: (optional {...}) Tier data or none if tier doesn't exist
+(define-read-only (get-tier-details 
+  (event-id uint) 
+  (tier-name (string-ascii 20)))
+  (map-get? ticket-tiers { event-id: event-id, tier-name: tier-name })
+)
+
+;; GET TIER TICKETS REMAINING (Read-Only)
+;; Calculates how many tickets are left in a specific tier
+;; @param event-id: Event identifier
+;; @param tier-name: Tier identifier
+;; @returns: (optional uint) Number remaining or none if tier doesn't exist
+(define-read-only (get-tier-tickets-remaining 
+  (event-id uint) 
+  (tier-name (string-ascii 20)))
+  (match (map-get? ticket-tiers { event-id: event-id, tier-name: tier-name })
+    tier (some (- (get total-supply tier) (get tickets-sold tier)))
+    none
+  )
+)
