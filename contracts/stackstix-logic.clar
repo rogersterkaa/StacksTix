@@ -20,12 +20,9 @@
 ;; Import SIP-009 NFT trait definition
 ;; This ensures our contract implements all required NFT standard functions
 (impl-trait .SIP-09.nft-trait)
-;; Define the NFT
-;; Each ticket is a unique SIP-009 compliant NFT
-(define-non-fungible-token stackstix-ticket uint)
 
 ;;;;;;;;;;;;;;;;;;;;;
-;;    CONSTANTS    ;;
+;; CONSTANTS       ;;
 ;;;;;;;;;;;;;;;;;;;;;
 
 ;; Business logic error codes (200 series to distinguish from storage errors)
@@ -46,15 +43,13 @@
 (define-constant ERR-INVALID-RECIPIENT (err u214))     ;; Invalid recipient address
 (define-constant ERR-TRANSFER-LOCKED (err u215))
 (define-constant ERR-PRICE-TOO-HIGH (err u216))
-
-;; Multi-tier ticket errors
-(define-constant ERR-TIER-NOT-FOUND (err u217))   ;; Requested tier does not exist
-(define-constant ERR-TIER-INACTIVE (err u218))    ;; Tier is disabled for purchases
-(define-constant ERR-SOLD-OUT (err u219))         ;; No tickets remaining in tier
-
+(define-constant ERR-WITHDRAW-TIMELOCK (err u217)) ;; Revenue cannot be withdrawn yet
 ;; Platform fee percentage (2% of ticket price)
 ;; Calculated as: (price * 2) / 100
 (define-constant PLATFORM-FEE-PERCENT u2)
+;; Revenue timelock duration (in blocks)
+ 
+(define-constant WITHDRAW-TIMELOCK u144)
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; DATA VARIABLES  ;;
@@ -81,9 +76,11 @@
     }
 )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; SIP-009 INTERFACE IMPLEMENTATION ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; SIP-009 INTERFACE IMPLEMENTATION
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; SIP-009 Required Function: Get the last token ID minted
 ;; Returns the highest ticket ID that has been assigned
@@ -180,9 +177,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; EVENT MANAGEMENT FUNCTIONS ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Create a new event with ticket sales
 ;; Anyone can create an event and become the organizer
@@ -297,9 +294,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; TICKET PURCHASE (MINTING) ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Purchase a ticket for an event (mints NFT)
 ;; Creates a new SIP-009 NFT ticket and transfers payment
@@ -337,7 +334,6 @@
               event-id
               tx-sender          ;; Buyer becomes owner
               stacks-block-height       ;; Record purchase time
-              "default"          ;; Default tier for non-tiered events
             ))
             
             ;; Update sold count to reflect new sale
@@ -382,9 +378,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;
-;; TICKET VALIDATION ;;
-;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; TICKET VALIDATION       ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Validate a ticket at event entry
 ;; Only authorized validators can call this
@@ -434,9 +430,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;
-;; REFUND SYSTEM ;;
-;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; REFUND SYSTEM           ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Request a refund for a ticket
 ;; Only available if event allows refunds and hasn't started yet
@@ -510,9 +506,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; VALIDATOR MANAGEMENT ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; VALIDATOR MANAGEMENT       ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Add an authorized validator for an event
 ;; Only event organizer can add validators
@@ -558,9 +554,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;
-;; REVENUE WITHDRAWAL ;;
-;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; REVENUE WITHDRAWAL        ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Withdraw accumulated revenue from ticket sales
 ;; Only event organizer can withdraw
@@ -574,34 +570,41 @@
       
       ;; Verify caller is event organizer
       (asserts! (is-eq tx-sender (get organizer event)) ERR-NOT-AUTHORIZED)
+
+      ;; Enforce timelock: event must be ended + buffer period
+      (asserts!
+        (> stacks-block-height (+ (get end-time event) WITHDRAW-TIMELOCK))
+        ERR-WITHDRAW-TIMELOCK
+      )
       
       ;; Get current event balance
       (let ((event-balance (unwrap! (contract-call? .stackstix-storage get-event-balance event-id) ERR-EVENT-NOT-FOUND)))
         
-        ;; Calculate withdrawable amount (locked balance)
+        ;; Amount available to withdraw
         (let ((withdrawable-amount (get locked-balance event-balance)))
           
-          ;; Verify there is something to withdraw
+          ;; Ensure something exists to withdraw
           (asserts! (> withdrawable-amount u0) ERR-WITHDRAW-NOT-ALLOWED)
           
-          ;; Update event balance (move locked to zero)
+          ;; Reset locked balance
           (try! (contract-call? .stackstix-storage set-event-balance
             event-id
             (get available-balance event-balance)
-            u0  ;; Clear locked balance
+            u0
           ))
           
-          ;; Transfer funds to organizer
-          ;; Use as-contract to transfer from contract's principal
-          (try! (as-contract (stx-transfer? withdrawable-amount tx-sender (get organizer event))))
+          ;; Transfer funds
+          (try! (as-contract
+            (stx-transfer? withdrawable-amount tx-sender (get organizer event))
+          ))
           
-          ;; Update total withdrawn tracking
+          ;; Update withdrawn tracking
           (try! (contract-call? .stackstix-storage increment-withdrawn
             event-id
             withdrawable-amount
           ))
           
-          ;; Emit withdrawal event
+          ;; Emit event
           (print {
             event: "event-revenue-withdrawn",
             event-id: event-id,
@@ -617,9 +620,9 @@
 )
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;  ADMIN CONFIGURATION   ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ADMIN CONFIGURATION       ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Set the storage contract principal
 ;; Should be called after deploying storage contract
@@ -727,9 +730,10 @@
   )
 )
 
-;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ;; TRANSFER RESTRICTIONS - Anti-Scalping  ;;
-;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ============================================================
+;; TRANSFER RESTRICTIONS - Anti-Scalping
+;; ============================================================
+
 (define-public (set-transfer-restriction
     (ticket-id uint)
     (transferable bool)
@@ -778,111 +782,3 @@
 (define-read-only (get-transfer-restriction (ticket-id uint))
     (map-get? transfer-restrictions { ticket-id: ticket-id })
 )
-
-;; ===========================
-;; MULTI-TIER TICKET FUNCTIONS
-;; Allows events to offer different ticket categories (VIP, GA, Early Bird)
-;; with unique pricing, supply limits, and benefits
-;; ===========================
-
-;; CREATE TICKET TIER
-;; Creates a new pricing tier for an existing event
-;; Only the event organizer can create tiers for their event
-;; Example: Create VIP tier with 50 tickets at 100 STX with backstage access
-;; @param event-id: Which event to add the tier to
-;; @param tier-name: Unique name for tier (max 20 chars, e.g., "VIP", "EarlyBird")
-;; @param price: Cost per ticket in microSTX (e.g., 100000000 = 100 STX)
-;; @param total-supply: Maximum tickets available in this tier
-;; @param benefits: Description of perks (e.g., "Backstage pass + Meet & Greet")
-;; @returns: (ok true) if tier created, or error
-(define-public (create-ticket-tier
-  (event-id uint)
-  (tier-name (string-ascii 20))
-  (price uint)
-  (total-supply uint)
-  (benefits (string-utf8 256)))
-  (begin
-    ;; Verify caller is the event organizer
-    (asserts! (contract-call? .stackstix-storage is-event-organizer event-id tx-sender) 
-              ERR-NOT-AUTHORIZED)
-    
-    ;; Delegate to storage contract to create tier
-    (contract-call? .stackstix-storage create-ticket-tier 
-                    event-id tier-name price total-supply benefits)
-  )
-)
-
-;; PURCHASE TIERED TICKET
-;; Buys a ticket from a specific tier (VIP, GA, etc.)
-;; Automatically charges the tier-specific price
-;; Mints an SIP-009 NFT ticket to the buyer
-;; Example: User buys VIP ticket - pays 100 STX - gets NFT ticket - VIP sold count increments
-;; @param event-id: Which event to buy ticket for
-;; @param tier-name: Which tier to purchase from (e.g., "VIP")
-;; @returns: (ok ticket-id) with the newly minted ticket ID, or error
-(define-public (purchase-tiered-ticket 
-  (event-id uint) 
-  (tier-name (string-ascii 20)))
-  (let (
-    ;; Fetch tier details to get price and verify availability
-    (tier (unwrap! (contract-call? .stackstix-storage get-tier-details event-id tier-name) 
-                   ERR-TIER-NOT-FOUND))
-    (ticket-price (get price tier))
-    (next-ticket-id (contract-call? .stackstix-storage get-next-ticket-id))
-  )
-    (begin
-      ;; Verify tier is active and has supply
-      (asserts! (get is-active tier) ERR-TIER-INACTIVE)
-      (asserts! (< (get tickets-sold tier) (get total-supply tier)) ERR-SOLD-OUT)
-      
-      ;; Process payment (transfer STX from buyer to contract)
-      (try! (stx-transfer? ticket-price tx-sender (as-contract tx-sender)))
-      
-      ;; Mint NFT ticket to buyer
-      (try! (nft-mint? stackstix-ticket next-ticket-id tx-sender))
-      
-      ;; Record sale in storage contract
-      (try! (contract-call? .stackstix-storage record-tier-ticket-sale event-id tier-name))
-      
-      ;; Create ticket record with tier info
-      (try! (contract-call? .stackstix-storage create-ticket 
-                            next-ticket-id event-id tx-sender tier-name))
-      
-      ;; Emit purchase event for indexers/frontend
-      (print {
-        event: "tier-ticket-purchased",
-        ticket-id: next-ticket-id,
-        event-id: event-id,
-        tier: tier-name,
-        buyer: tx-sender,
-        price: ticket-price
-      })
-      
-      ;; Return the new ticket ID
-      (ok next-ticket-id)
-    )
-  )
-)
-
-;; GET TIER DETAILS (Read-Only)
-;; Retrieves complete information about a specific tier
-;; Useful for frontends to display tier options with pricing and availability
-;; @param event-id: Event identifier
-;; @param tier-name: Tier identifier
-;; @returns: (optional {...}) Tier data or none if tier doesn't exist
-(define-read-only (get-tier-details 
-  (event-id uint) 
-  (tier-name (string-ascii 20)))
-  (contract-call? .stackstix-storage get-tier-details event-id tier-name)
-)
-
-;; GET TIER TICKETS REMAINING (Read-Only)
-;; Returns how many tickets are left in a specific tier
-;; Frontend can use this to show "Only 3 VIP tickets left!" messages
-;; @param event-id: Event identifier
-;; @param tier-name: Tier identifier
-;; @returns: (optional uint) Number remaining, or none if tier doesn't exist
-(define-read-only (get-tier-tickets-remaining 
-  (event-id uint) 
-  (tier-name (string-ascii 20)))
-  (contract-call? .stackstix-storage get-tier-tickets-remaining event-id tier-name))
