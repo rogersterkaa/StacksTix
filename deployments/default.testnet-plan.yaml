@@ -1,0 +1,32 @@
+---
+id: 0
+name: Testnet deployment
+network: testnet
+stacks-node: "https://api.testnet.hiro.so"
+bitcoin-node: "http://blockstack:blockstacksystem@bitcoind.testnet.stacks.co:18332"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - contract-publish:
+            contract-name: SIP-09
+            expected-sender: ST1B10ZBNJ3FP9K6BAFE1ZY46TYKYTHE66QS885YZ
+            cost: 27736810
+            path: "contracts\\SIP-09.clar"
+            anchor-block-only: true
+            clarity-version: 3
+        - contract-publish:
+            contract-name: stackstix-storage
+            expected-sender: ST1B10ZBNJ3FP9K6BAFE1ZY46TYKYTHE66QS885YZ
+            cost: 28512696
+            path: "contracts\\stackstix-storage.clar"
+            anchor-block-only: true
+            clarity-version: 3
+        - contract-publish:
+            contract-name: stackstix-logic
+            expected-sender: ST1B10ZBNJ3FP9K6BAFE1ZY46TYKYTHE66QS885YZ
+            cost: 28421949
+            path: "contracts\\stackstix-logic.clar"
+            anchor-block-only: true
+            clarity-version: 3
+      epoch: "3.2"
