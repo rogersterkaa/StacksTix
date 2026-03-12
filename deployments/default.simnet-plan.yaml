@@ -66,16 +66,16 @@ plan:
         - emulated-contract-publish:
             contract-name: SIP-09
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: "contracts\\SIP-09.clar"
+            path: contracts/SIP-09.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: stackstix-storage
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: "contracts\\stackstix-storage.clar"
+            path: contracts/stackstix-storage.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: stackstix-logic
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: "contracts\\stackstix-logic.clar"
+            path: contracts/stackstix-logic.clar
             clarity-version: 3
       epoch: "3.2"
