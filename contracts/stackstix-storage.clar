@@ -85,7 +85,8 @@
     location: (string-utf8 100),               ;; Venue/address (max 100 UTF-8 characters)
     start-time: uint,                          ;; Block height when event begins
     end-time: uint,                            ;; Block height when event ends
-    ticket-price: uint,                        ;; Price per ticket in microSTX (1 STX = 1,000,000 microSTX)
+    ticket-price: uint,                        ;; Price in micro-units (microSTX if STX, satoshis if sBTC)
+    payment-token: (string-ascii 10),          ;; Payment type: "STX" or "sBTC"
     total-supply: uint,                        ;; Maximum number of tickets available
     sold-count: uint,                          ;; Current number of tickets sold
     is-active: bool,                           ;; Whether event is active (can be cancelled)
@@ -348,6 +349,7 @@
     (start-time uint)
     (end-time uint)
     (ticket-price uint)
+    (payment-token (string-ascii 10))
     (total-supply uint)
     (refund-allowed bool)
     (transferable bool)
@@ -373,6 +375,7 @@
         start-time: start-time,
         end-time: end-time,
         ticket-price: ticket-price,
+        payment-token: payment-token,
         total-supply: total-supply,
         sold-count: u0,              ;; Start with zero sales
         is-active: true,             ;; New events are active by default

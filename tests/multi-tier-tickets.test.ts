@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import { initSimnet } from "@hirosystems/clarinet-sdk";
 import { Cl } from "@stacks/transactions";
 
@@ -38,8 +38,9 @@ function createTestEvent(name = "Test Event") {
       Cl.uint(simnet.blockHeight + 100),
       Cl.uint(simnet.blockHeight + 200),
       Cl.uint(50000000),
-      Cl.uint(100),
-      Cl.bool(true),
+        Cl.stringAscii("STX"),
+        Cl.uint(100),
+        Cl.bool(true),
       Cl.bool(true),
       Cl.none(),
     ],

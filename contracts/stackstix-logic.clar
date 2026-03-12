@@ -198,13 +198,14 @@
 ;; @param metadata-uri: Optional URI to off-chain metadata (IPFS, Arweave, etc.)
 ;; @returns: (response uint uint) - The new event ID or error
 (define-public (create-event
-    (name (string-utf8 100))
-    (description (string-utf8 500))
-    (location (string-utf8 100))
-    (start-time uint)
-    (end-time uint)
-    (ticket-price uint)
-    (total-supply uint)
+      (name (string-utf8 100))
+      (description (string-utf8 500))
+      (location (string-utf8 100))
+      (start-time uint)
+      (end-time uint)
+      (ticket-price uint)
+      (payment-token (string-ascii 10))
+      (total-supply uint)
     (refund-allowed bool)
     (transferable bool)
     (metadata-uri (optional (string-utf8 256))))
@@ -223,6 +224,7 @@
         start-time
         end-time
         ticket-price
+          payment-token
         total-supply
         refund-allowed
         transferable
