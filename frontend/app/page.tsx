@@ -1,13 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { openContractCall } from "@stacks/connect";
+import {
+  uintCV,
+  PostConditionMode,
+} from "@stacks/transactions";
 
 export default function Home() {
   const [address, setAddress] = useState<string>("");
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [purchasing, setPurchasing] = useState<number | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const contractAddress = "ST1B10ZBNJ3FP9K6BAFE1ZY46TYKYTHE66QS885YZ";
+  const contractName = "stackstix-logic";
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const connectWallet = async () => {
     try {
@@ -22,7 +34,6 @@ export default function Home() {
       const response = await provider.request('getAddresses');
       
       if (response?.result?.addresses) {
-        // Find testnet STX address (starts with ST)
         const testnetAddr = response.result.addresses.find(
           (addr: any) => addr.symbol === 'STX' && addr.address.startsWith('ST')
         );
@@ -50,8 +61,8 @@ export default function Home() {
     const mockEvents = [
       {
         id: 1,
-        name: { value: "Bitcoin Conference 2026" },
-        location: { value: "Lagos Convention Center" },
+        name: { value: "Bitcoin Conference Lagos 2026" },
+        location: { value: "Eko Convention Center" },
         price: { value: "50000000" },
         "total-supply": { value: "100" },
         "tickets-sold": { value: "0" }
@@ -59,7 +70,7 @@ export default function Home() {
       {
         id: 2,
         name: { value: "Stacks Developer Meetup" },
-        location: { value: "Tech Hub Lagos" },
+        location: { value: "Tech Hub Yaba" },
         price: { value: "25000000" },
         "total-supply": { value: "50" },
         "tickets-sold": { value: "0" }
@@ -71,6 +82,50 @@ export default function Home() {
       setLoading(false);
     }, 1000);
   };
+
+  const buyTicket = async (eventId: number) => {
+    if (!address) {
+      alert("Please connect your wallet first!");
+      return;
+    }
+
+    if (!mounted) {
+      alert("Page still loading, please wait...");
+      return;
+    }
+
+    setPurchasing(eventId);
+
+    try {
+      const functionArgs = [uintCV(eventId)];
+
+      await openContractCall({
+        network: "testnet",
+        contractAddress,
+        contractName,
+        functionName: "purchase-ticket",
+        functionArgs,
+        postConditionMode: PostConditionMode.Allow,
+        onFinish: (data: any) => {
+          console.log("Transaction:", data);
+          alert(`🎉 Ticket purchased successfully! Transaction ID: ${data.txId}`);
+          setPurchasing(null);
+        },
+        onCancel: () => {
+          console.log("Transaction cancelled");
+          setPurchasing(null);
+        },
+      });
+    } catch (error) {
+      console.error("Purchase failed:", error);
+      alert("Failed to purchase ticket. Please try again.");
+      setPurchasing(null);
+    }
+  };
+
+  if (!mounted) {
+    return null; // Prevent SSR issues
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-black">
@@ -115,9 +170,6 @@ export default function Home() {
             <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-6 max-w-2xl mx-auto mb-8">
               <p className="text-yellow-200">
                 👆 Connect your Leather Wallet to browse events
-              </p>
-              <p className="text-yellow-100 text-sm mt-2">
-                Make sure you're on Testnet4 in wallet settings
               </p>
             </div>
           )}
@@ -185,8 +237,12 @@ export default function Home() {
                     </p>
                   </div>
 
-                  <button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 rounded-lg font-semibold transition shadow-lg">
-                    Buy Ticket
+                  <button 
+                    onClick={() => buyTicket(event.id)}
+                    disabled={purchasing === event.id}
+                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 rounded-lg font-semibold transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {purchasing === event.id ? "Processing..." : "Buy Ticket"}
                   </button>
                 </div>
               ))}
