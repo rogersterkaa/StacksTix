@@ -116,9 +116,6 @@ export default function Home() {
               <p className="text-yellow-200">
                 👆 Connect your Leather Wallet to browse events
               </p>
-              <p className="text-yellow-100 text-sm mt-2">
-                Make sure you're on Testnet4 in wallet settings
-              </p>
             </div>
           )}
 
